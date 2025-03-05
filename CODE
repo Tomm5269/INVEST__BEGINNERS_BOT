@@ -1,0 +1,225 @@
+#прежде чем взаимодействовать с кодом пропишите в консоли - pip install tinkoff-investments pandas
+#также необходимо получить ТОКЕН с полным доступом в настройках приложения в разделе API
+
+from tinkoff.invest import Client, InstrumentStatus, MoneyValue, RequestError, OrderDirection, OrderType
+from tinkoff.invest.services import InstrumentsService
+import logging
+import os
+from pandas import DataFrame
+from tinkoff.invest import Client
+from tinkoff.invest.utils import quotation_to_decimal
+from datetime import datetime   
+
+TOKEN = ""  #вставьте сюда ваш тинькофф токен
+
+#раскомментируйте чтобы узнать ваш аккаунт id, а затем обратно закомментируйте
+'''
+#узнать id аккаунта
+with Client(TOKEN) as client:
+    r = client.users.get_accounts()
+    print(r)
+'''
+
+ACCOUNT_ID = ""  #вставьте сюда ваш аккаунт id
+
+# Функция для поиска FIGI по тикеру
+def get_figi_by_ticker(ticker):
+    with Client(TOKEN) as client:
+        instruments: InstrumentsService = client.instruments
+
+        # Ищем акцию по тикеру
+        shares = instruments.shares().instruments
+
+        for share in shares:
+            if share.ticker == ticker:
+                return share.figi  
+
+        return None
+
+def sell_share():
+    ticker = input("Введите тикер: ").strip().upper()
+    FIGI = get_figi_by_ticker(ticker)
+
+    def cast_money(v):
+        """Функция для преобразования Quotation в десятичное число."""
+        return v.units + v.nano / 1e9
+
+    def run():
+        try:
+            with Client(TOKEN) as client:
+                # Размещение рыночного ордера на покупку
+                r = client.orders.post_order(
+                    order_id="",  
+                    figi=FIGI,  # FIGI-код инструмента
+                    quantity=int(input('Введите количество лотов для продажи:')),  # Количество лотов
+                    account_id=ACCOUNT_ID, 
+                    direction=OrderDirection.ORDER_DIRECTION_SELL,  # Направление ордера (продажа)
+                    order_type=OrderType.ORDER_TYPE_MARKET  # Тип ордера (рыночный - продаем по рынку по самой дешевой цене)
+                )
+                print("Результат размещения ордера:", r)
+        except RequestError as e:
+            print("Ошибка при выполнении запроса:", str(e))
+
+    if __name__ == "__main__":
+        run()
+
+def buy_share():
+    ticker = input("Введите тикер: ").strip().upper()
+    FIGI = get_figi_by_ticker(ticker)
+    #купить акцию
+    def cast_money(v):
+        """Функция для преобразования Quotation в десятичное число."""
+        return v.units + v.nano / 1e9
+
+    def run():
+        try:
+            with Client(TOKEN) as client:
+                # Размещение рыночного ордера на покупку
+                r = client.orders.post_order(
+                    order_id="",  
+                    figi=FIGI,  # FIGI-код инструмента
+                    quantity=int(input('Введите количество лотов для продажи:')),  # Количество лотов
+                    account_id=ACCOUNT_ID,  # Идентификатор счёта
+                    direction=OrderDirection.ORDER_DIRECTION_BUY,  # Направление ордера (покупка)
+                    order_type=OrderType.ORDER_TYPE_MARKET  # Тип ордера (рыночный - покупаем по рынку по самой дешевой цене)
+                )
+                print("Результат размещения ордера:", r)
+        except RequestError as e:
+            print("Ошибка при выполнении запроса:", str(e))
+
+    if __name__ == "__main__":
+        run()
+
+def main__share_inf():
+    # Настройка логирования
+    logging.basicConfig(format="%(asctime)s %(levelname)s:%(message)s", level=logging.DEBUG)
+    logger = logging.getLogger(__name__)
+
+    def get_price_by_figi(token, figi):
+        """Получение текущей цены акции по её FIGI."""
+        with Client(token) as client:
+            last_prices = client.market_data.get_last_prices(instrument_id=[figi])
+            if last_prices and last_prices.last_prices:
+                last_price = last_prices.last_prices[0]
+                total_price = quotation_to_decimal(last_price.price)
+                total_price = total_price.normalize()
+                return total_price
+            else:
+                logger.error("Не удалось получить цену акции. Возможно, рынок закрыт или данные отсутствуют.")
+                return None
+
+    def main():
+        ticker = input("Введите тикер: ").strip().upper()
+
+        with Client(TOKEN) as client:
+            instruments_service = client.instruments
+            tickers = []
+
+            # Получение данных по всем инструментам
+            for method in ["shares"]:          # в дальнейшем можно сделать тоже самое для других инвест инструментов - "bonds", "etfs", "currencies", "futures"
+                try:
+                    for item in getattr(instruments_service, method)().instruments:
+                        tickers.append(
+                            {
+                                "name": item.name,
+                                "ticker": item.ticker,
+                                "figi": item.figi,  # Добавляем figi
+                                "type": method,
+                                "lot": item.lot,
+                                "currency": item.currency,
+                                "exchange": item.exchange,
+                                "buy_available_flag": item.buy_available_flag,
+                                "sell_available_flag": item.sell_available_flag,
+                            }
+                        )
+                except Exception as e:
+                    logger.error(f"Ошибка при получении данных для метода {method}: {e}")
+
+            # Создание DataFrame 
+            tickers_df = DataFrame(tickers)
+
+            # Поиск тикера в DataFrame
+            ticker_df = tickers_df[tickers_df["ticker"] == ticker]
+
+            if ticker_df.empty:
+                logger.error(f"Тикер '{ticker}' не найден.")
+                return
+
+            # Получение FIGI 
+            figi = ticker_df["figi"].iloc[0]
+            print(f"\nТикер {ticker} имеет figi={figi}\n")
+            print(f"Дополнительная информация по тикеру {ticker}:")
+            print(ticker_df.iloc[0])
+
+            # Получение текущей цены акции
+            price = get_price_by_figi(TOKEN, figi)
+            if price is not None:
+                print(f"\nТекущая цена акции {ticker}: {price} ₽")
+            else:
+                print("\nЦена акции недоступна. Возможно, рынок закрыт.")
+
+    print('Предупреждение: код работает только для акций РОССИЙСКИХ компаний')
+
+    if __name__ == "__main__":
+        main()
+
+def inf_all_shares():
+    list_moex_extended = []
+    list_MOEX_PLUS = []
+    list_MOEX = []
+    list_MOEX_WEEKEND = []
+    list_MOEX_EVENING_WEEKEND = []
+    list_moex_mrng_evng_e_wknd_dlr = []
+
+    with Client(TOKEN) as client:
+        # Получаем все акции
+        r = client.instruments.shares(instrument_status=InstrumentStatus.INSTRUMENT_STATUS_ALL)
+        
+        # Фильтрация акциий по виду биржи
+        for share in r.instruments:
+            if share.exchange == "moex_extended":
+                list_moex_extended.append((share.ticker, share.name))
+            if share.exchange == "MOEX_PLUS":
+                list_MOEX_PLUS.append((share.ticker, share.name))
+            if share.exchange == "MOEX":
+                list_MOEX.append((share.ticker, share.name))
+            if share.exchange == "MOEX_WEEKEND":
+                list_MOEX_WEEKEND.append((share.ticker, share.name))
+            if share.exchange == "MOEX_EVENING_WEEKEND":
+                list_MOEX_EVENING_WEEKEND.append((share.ticker, share.name))
+            if share.exchange == "moex_mrng_evng_e_wknd_dlr":
+                list_moex_mrng_evng_e_wknd_dlr.append((share.ticker, share.name))
+
+
+    # Объединение списков и устранение дубликатов
+    all_shares = set(list_moex_extended + list_MOEX_PLUS + list_MOEX + list_MOEX_WEEKEND + list_MOEX_EVENING_WEEKEND + list_moex_mrng_evng_e_wknd_dlr)
+
+    print("\nСписок всех доступных акций на рынке:")
+    for ticker, name in all_shares:
+        print(f"{ticker}: {name}")
+
+#########################
+
+print('Для начала работы выберите что вы хотите сделать:')
+print('СПИСОК_АКЦИЙ - выведет все доступные акции на Московской бирже')
+print('ОСНОВНАЯ_ИНФОРМАЦИЯ_АКЦИИ - выведет основную информацию об акции по тикеру')
+print('ПОКУПКА - покупка ценной бумаги по тикеру')
+print('ПРОДАЖА - продажа ценной бумаги по тикеру')
+
+request = input("Введите запрос: ").strip().upper()
+
+if request == 'СПИСОК_АКЦИЙ':
+    if __name__ == "__main__":
+        inf_all_shares()
+
+if request == 'ОСНОВНАЯ_ИНФОРМАЦИЯ_АКЦИИ':
+    if __name__ == "__main__":
+        main__share_inf()
+        
+if request == 'ПОКУПКА':
+    if __name__ == "__main__":
+        buy_share()
+
+if request == 'ПРОДАЖА':
+    if __name__ == "__main__":
+        sell_share()
