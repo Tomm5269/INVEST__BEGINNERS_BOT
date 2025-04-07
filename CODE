@@ -1,169 +1,35 @@
 #прежде чем взаимодействовать с кодом пропишите в консоли - pip install tinkoff-investments pandas
 #также необходимо получить ТОКЕН с полным доступом в настройках приложения в разделе API
 
-from tinkoff.invest import Client, InstrumentStatus, MoneyValue, RequestError, OrderDirection, OrderType
-from tinkoff.invest.services import InstrumentsService
-import logging
-import os
-from pandas import DataFrame
-from tinkoff.invest import Client
+from tinkoff.invest import Client, InstrumentStatus, RequestError, OrderDirection, OrderType
+from tinkoff.invest.services import InstrumentsService, MarketDataService
 from tinkoff.invest.utils import quotation_to_decimal
-from datetime import datetime   
+from tinkoff.invest.constants import INVEST_GRPC_API
 
-TOKEN = ""  #вставьте сюда ваш тинькофф токен
+TOKEN = ""  # Вставьте сюда ваш Тинькофф токен с полным доступом
 
-#раскомментируйте чтобы узнать ваш аккаунт id, а затем обратно закомментируйте
-'''
-#узнать id аккаунта
-with Client(TOKEN) as client:
-    r = client.users.get_accounts()
-    print(r)
-'''
+ACCOUNT_ID = ""  # Вставьте сюда ваш аккаунт id
 
-ACCOUNT_ID = ""  #вставьте сюда ваш аккаунт id
-
-# Функция для поиска FIGI по тикеру
-def get_figi_by_ticker(ticker):
+def get_share_figi_by_ticker(ticker):
     with Client(TOKEN) as client:
         instruments: InstrumentsService = client.instruments
-
-        # Ищем акцию по тикеру
         shares = instruments.shares().instruments
-
         for share in shares:
             if share.ticker == ticker:
                 return share.figi  
 
-        return None
+def get_bond_figi_by_ticker(ticker):
+    with Client(TOKEN) as client:
+        instruments: InstrumentsService = client.instruments
+        bonds = instruments.bonds().instruments
+        for bond in bonds:
+            if bond.ticker == ticker:
+                return bond.figi 
 
-def sell_share():
+def sell_bond():
     ticker = input("Введите тикер: ").strip().upper()
-    FIGI = get_figi_by_ticker(ticker)
+    FIGI = get_share_figi_by_ticker(ticker)
 
-    def cast_money(v):
-        """Функция для преобразования Quotation в десятичное число."""
-        return v.units + v.nano / 1e9
-
-    def run():
-        try:
-            with Client(TOKEN) as client:
-                # Размещение рыночного ордера на покупку
-                r = client.orders.post_order(
-                    order_id="",  
-                    figi=FIGI,  # FIGI-код инструмента
-                    quantity=int(input('Введите количество лотов для продажи:')),  # Количество лотов
-                    account_id=ACCOUNT_ID, 
-                    direction=OrderDirection.ORDER_DIRECTION_SELL,  # Направление ордера (продажа)
-                    order_type=OrderType.ORDER_TYPE_MARKET  # Тип ордера (рыночный - продаем по рынку по самой дешевой цене)
-                )
-                print("Результат размещения ордера:", r)
-        except RequestError as e:
-            print("Ошибка при выполнении запроса:", str(e))
-
-    if __name__ == "__main__":
-        run()
-
-def buy_share():
-    ticker = input("Введите тикер: ").strip().upper()
-    FIGI = get_figi_by_ticker(ticker)
-    #купить акцию
-    def cast_money(v):
-        """Функция для преобразования Quotation в десятичное число."""
-        return v.units + v.nano / 1e9
-
-    def run():
-        try:
-            with Client(TOKEN) as client:
-                # Размещение рыночного ордера на покупку
-                r = client.orders.post_order(
-                    order_id="",  
-                    figi=FIGI,  # FIGI-код инструмента
-                    quantity=int(input('Введите количество лотов для продажи:')),  # Количество лотов
-                    account_id=ACCOUNT_ID,  # Идентификатор счёта
-                    direction=OrderDirection.ORDER_DIRECTION_BUY,  # Направление ордера (покупка)
-                    order_type=OrderType.ORDER_TYPE_MARKET  # Тип ордера (рыночный - покупаем по рынку по самой дешевой цене)
-                )
-                print("Результат размещения ордера:", r)
-        except RequestError as e:
-            print("Ошибка при выполнении запроса:", str(e))
-
-    if __name__ == "__main__":
-        run()
-
-def main__share_inf():
-    # Настройка логирования
-    logging.basicConfig(format="%(asctime)s %(levelname)s:%(message)s", level=logging.DEBUG)
-    logger = logging.getLogger(__name__)
-
-    def get_price_by_figi(token, figi):
-        """Получение текущей цены акции по её FIGI."""
-        with Client(token) as client:
-            last_prices = client.market_data.get_last_prices(instrument_id=[figi])
-            if last_prices and last_prices.last_prices:
-                last_price = last_prices.last_prices[0]
-                total_price = quotation_to_decimal(last_price.price)
-                total_price = total_price.normalize()
-                return total_price
-            else:
-                logger.error("Не удалось получить цену акции. Возможно, рынок закрыт или данные отсутствуют.")
-                return None
-
-    def main():
-        ticker = input("Введите тикер: ").strip().upper()
-
-        with Client(TOKEN) as client:
-            instruments_service = client.instruments
-            tickers = []
-
-            # Получение данных по всем инструментам
-            for method in ["shares"]:          # в дальнейшем можно сделать тоже самое для других инвест инструментов - "bonds", "etfs", "currencies", "futures"
-                try:
-                    for item in getattr(instruments_service, method)().instruments:
-                        tickers.append(
-                            {
-                                "name": item.name,
-                                "ticker": item.ticker,
-                                "figi": item.figi,  # Добавляем figi
-                                "type": method,
-                                "lot": item.lot,
-                                "currency": item.currency,
-                                "exchange": item.exchange,
-                                "buy_available_flag": item.buy_available_flag,
-                                "sell_available_flag": item.sell_available_flag,
-                            }
-                        )
-                except Exception as e:
-                    logger.error(f"Ошибка при получении данных для метода {method}: {e}")
-
-            # Создание DataFrame 
-            tickers_df = DataFrame(tickers)
-
-            # Поиск тикера в DataFrame
-            ticker_df = tickers_df[tickers_df["ticker"] == ticker]
-
-            if ticker_df.empty:
-                logger.error(f"Тикер '{ticker}' не найден.")
-                return
-
-            # Получение FIGI 
-            figi = ticker_df["figi"].iloc[0]
-            print(f"\nТикер {ticker} имеет figi={figi}\n")
-            print(f"Дополнительная информация по тикеру {ticker}:")
-            print(ticker_df.iloc[0])
-
-            # Получение текущей цены акции
-            price = get_price_by_figi(TOKEN, figi)
-            if price is not None:
-                print(f"\nТекущая цена акции {ticker}: {price} ₽")
-            else:
-                print("\nЦена акции недоступна. Возможно, рынок закрыт.")
-
-    print('Предупреждение: код работает только для акций РОССИЙСКИХ компаний')
-
-    if __name__ == "__main__":
-        main()
-
-def inf_all_shares():
     list_moex_extended = []
     list_MOEX_PLUS = []
     list_MOEX = []
@@ -172,10 +38,112 @@ def inf_all_shares():
     list_moex_mrng_evng_e_wknd_dlr = []
 
     with Client(TOKEN) as client:
-        # Получаем все акции
+        r = client.instruments.bonds(instrument_status=InstrumentStatus.INSTRUMENT_STATUS_ALL)
+        
+        for bond in r.instruments:
+            if bond.exchange == "moex_extended":
+                list_moex_extended.append((bond.ticker, bond.name))
+            if bond.exchange == "MOEX_PLUS":
+                list_MOEX_PLUS.append((bond.ticker, bond.name))
+            if bond.exchange == "MOEX":
+                list_MOEX.append((bond.ticker, bond.name))
+            if bond.exchange == "MOEX_WEEKEND":
+                list_MOEX_WEEKEND.append((bond.ticker, bond.name))
+            if bond.exchange == "MOEX_EVENING_WEEKEND":
+                list_MOEX_EVENING_WEEKEND.append((bond.ticker, bond.name))
+            if bond.exchange == "moex_mrng_evng_e_wknd_dlr":
+                list_moex_mrng_evng_e_wknd_dlr.append((bond.ticker, bond.name))
+
+    all_bonds = set(list_moex_extended + list_MOEX_PLUS + list_MOEX + list_MOEX_WEEKEND + list_MOEX_EVENING_WEEKEND + list_moex_mrng_evng_e_wknd_dlr)
+
+    flag = False
+    for tickerinall_bonds in all_bonds:
+        if ticker == tickerinall_bonds:
+            flag = True
+            break
+    if flag == False: print(f'\nВ данный момент "{ticker}" не торгуется на Московской бирже, иначе - проверьте правильность написания тикера.')
+       
+    if flag == True:
+        try:
+            with Client(TOKEN) as client:
+                r = client.orders.post_order(
+                    order_id="",  
+                    figi=FIGI,
+                    quantity=int(input('Введите количество лотов для продажи:')),
+                    account_id=ACCOUNT_ID, 
+                    direction=OrderDirection.ORDER_DIRECTION_SELL,
+                    order_type=OrderType.ORDER_TYPE_MARKET
+                )
+                print("Результат размещения ордера:", r)
+        except RequestError as e:
+            print("В данный момент времени покупка данной бумаги невозможна")
+
+def buy_bond():
+    ticker = input("Введите тикер: ").strip().upper()
+    FIGI = get_bond_figi_by_ticker(ticker)
+
+    list_moex_extended = []
+    list_MOEX_PLUS = []
+    list_MOEX = []
+    list_MOEX_WEEKEND = []
+    list_MOEX_EVENING_WEEKEND = []
+    list_moex_mrng_evng_e_wknd_dlr = []
+
+    with Client(TOKEN) as client:
+        r = client.instruments.bonds(instrument_status=InstrumentStatus.INSTRUMENT_STATUS_ALL)
+        
+        for bond in r.instruments:
+            if bond.exchange == "moex_extended":
+                list_moex_extended.append((bond.ticker, bond.name))
+            if bond.exchange == "MOEX_PLUS":
+                list_MOEX_PLUS.append((bond.ticker, bond.name))
+            if bond.exchange == "MOEX":
+                list_MOEX.append((bond.ticker, bond.name))
+            if bond.exchange == "MOEX_WEEKEND":
+                list_MOEX_WEEKEND.append((bond.ticker, bond.name))
+            if bond.exchange == "MOEX_EVENING_WEEKEND":
+                list_MOEX_EVENING_WEEKEND.append((bond.ticker, bond.name))
+            if bond.exchange == "moex_mrng_evng_e_wknd_dlr":
+                list_moex_mrng_evng_e_wknd_dlr.append((bond.ticker, bond.name))
+
+    all_bonds = set(list_moex_extended + list_MOEX_PLUS + list_MOEX + list_MOEX_WEEKEND + list_MOEX_EVENING_WEEKEND + list_moex_mrng_evng_e_wknd_dlr)
+
+    flag = False
+    for tickerinall_bonds in all_bonds:
+        if ticker == tickerinall_bonds:
+            flag = True
+            break
+    if flag == False: print(f'\nВ данный момент "{ticker}" не торгуется на Московской бирже, иначе - проверьте правильность написания тикера.')
+       
+    if flag == True:
+        with Client(TOKEN) as client:
+            try:
+                r = client.orders.post_order(
+                    order_id="",  
+                    figi=FIGI,
+                    quantity=int(input('Введите количество лотов для покупки:')),
+                    account_id=ACCOUNT_ID,
+                    direction=OrderDirection.ORDER_DIRECTION_BUY,
+                    order_type=OrderType.ORDER_TYPE_MARKET
+                )
+                print("Результат размещения ордера:", r)
+            except RequestError as e:
+                print("В данный момент времени покупка данной бумаги невозможна")
+
+def sell_share():
+    ticker = input("Введите тикер: ").strip().upper()
+    FIGI = get_share_figi_by_ticker(ticker)
+
+    list_moex_extended = []
+    list_MOEX_PLUS = []
+    list_MOEX = []
+    list_MOEX_WEEKEND = []
+    list_MOEX_EVENING_WEEKEND = []
+    list_moex_mrng_evng_e_wknd_dlr = []
+
+    with Client(TOKEN) as client:
         r = client.instruments.shares(instrument_status=InstrumentStatus.INSTRUMENT_STATUS_ALL)
         
-        # Фильтрация акциий по виду биржи
         for share in r.instruments:
             if share.exchange == "moex_extended":
                 list_moex_extended.append((share.ticker, share.name))
@@ -190,36 +158,347 @@ def inf_all_shares():
             if share.exchange == "moex_mrng_evng_e_wknd_dlr":
                 list_moex_mrng_evng_e_wknd_dlr.append((share.ticker, share.name))
 
+    all_shares = set(list_moex_extended + list_MOEX_PLUS + list_MOEX + list_MOEX_WEEKEND + list_MOEX_EVENING_WEEKEND + list_moex_mrng_evng_e_wknd_dlr)
 
-    # Объединение списков и устранение дубликатов
+    flag = False
+    for tickerinall_shares in all_shares:
+        if ticker == tickerinall_shares:
+            flag = True
+            break
+    if flag == False: print(f'\nВ данный момент "{ticker}" не торгуется на Московской бирже, иначе - проверьте правильность написания тикера.')
+
+    if flag == True:
+        try:
+            with Client(TOKEN) as client:
+                r = client.orders.post_order(
+                    order_id="",  
+                    figi=FIGI,
+                    quantity=int(input('Введите количество лотов для продажи:')),
+                    account_id=ACCOUNT_ID, 
+                    direction=OrderDirection.ORDER_DIRECTION_SELL,
+                    order_type=OrderType.ORDER_TYPE_MARKET
+                )
+                print("Результат размещения ордера:", r)
+        except RequestError as e:
+            print("В данный момент времени покупка данной бумаги невозможна")
+
+def buy_share():
+    ticker = input("Введите тикер: ").strip().upper()
+    FIGI = get_share_figi_by_ticker(ticker)
+    list_moex_extended = []
+    list_MOEX_PLUS = []
+    list_MOEX = []
+    list_MOEX_WEEKEND = []
+    list_MOEX_EVENING_WEEKEND = []
+    list_moex_mrng_evng_e_wknd_dlr = []
+
+    with Client(TOKEN) as client:
+        r = client.instruments.shares(instrument_status=InstrumentStatus.INSTRUMENT_STATUS_ALL)
+        
+        for share in r.instruments:
+            if share.exchange == "moex_extended":
+                list_moex_extended.append((share.ticker, share.name))
+            if share.exchange == "MOEX_PLUS":
+                list_MOEX_PLUS.append((share.ticker, share.name))
+            if share.exchange == "MOEX":
+                list_MOEX.append((share.ticker, share.name))
+            if share.exchange == "MOEX_WEEKEND":
+                list_MOEX_WEEKEND.append((share.ticker, share.name))
+            if share.exchange == "MOEX_EVENING_WEEKEND":
+                list_MOEX_EVENING_WEEKEND.append((share.ticker, share.name))
+            if share.exchange == "moex_mrng_evng_e_wknd_dlr":
+                list_moex_mrng_evng_e_wknd_dlr.append((share.ticker, share.name))
+
+    all_shares = set(list_moex_extended + list_MOEX_PLUS + list_MOEX + list_MOEX_WEEKEND + list_MOEX_EVENING_WEEKEND + list_moex_mrng_evng_e_wknd_dlr)
+
+    flag = False
+    for tickerinall_shares, name in all_shares:
+        if ticker == tickerinall_shares:
+            flag = True
+            break
+    if flag == False: print(f'\nВ данный момент "{ticker}" не торгуется на Московской бирже, иначе - проверьте правильность написания тикера.')
+
+    if flag == True:
+        with Client(TOKEN) as client:
+            try:
+                r = client.orders.post_order(
+                    order_id="",  
+                    figi=FIGI,
+                    quantity=int(input('Введите количество лотов для покупки:')),
+                    account_id=ACCOUNT_ID,
+                    direction=OrderDirection.ORDER_DIRECTION_BUY,
+                    order_type=OrderType.ORDER_TYPE_MARKET
+                )
+                print("Результат размещения ордера:", r)
+            except RequestError as e:
+                print("В данный момент времени покупка данной бумаги невозможна")
+
+def main_info():
+    def get_currency_rate(figi):
+        with Client(TOKEN, target=INVEST_GRPC_API) as client:
+            last_price = client.market_data.get_last_prices(figi=[figi]).last_prices[0]
+            total_price = float(str(quotation_to_decimal(last_price.price)).rstrip('0'))
+            return total_price
+
+    def get_bond_nominal_by_ticker(ticker):
+        with Client(TOKEN) as client:
+            instruments: InstrumentsService = client.instruments
+
+            bonds = instruments.bonds().instruments
+
+            for bond in bonds:
+                if bond.ticker == ticker:
+                    nominal = bond.nominal
+                    currency = bond.nominal.currency
+                    return nominal.units + nominal.nano, currency
+
+    def get_bond_price_by_figi(TOKEN, figi):
+        with Client(TOKEN) as client:
+            market_data: MarketDataService = client.market_data
+            last_prices = market_data.get_last_prices(instrument_id=[figi])
+            if last_prices and last_prices.last_prices:
+                last_price = last_prices.last_prices[0]
+                return quotation_to_decimal(last_price.price)
+
+    def get_share_price_by_figi(TOKEN, figi):
+        with Client(TOKEN) as client:
+            last_prices = client.market_data.get_last_prices(instrument_id=[figi])
+            if last_prices and last_prices.last_prices:
+                last_price = last_prices.last_prices[0]
+                total_price = quotation_to_decimal(last_price.price)
+                total_price = total_price.normalize()
+                return total_price
+            
+    def bonds_outstanding(ticker):        #облигаций в обращении
+        with Client(TOKEN) as client:
+            instruments: InstrumentsService = client.instruments
+
+            bonds = instruments.bonds().instruments
+
+            for bond in bonds:
+                if bond.ticker == ticker:
+                    if hasattr(bond, 'issue_size'):
+                        return bond.issue_size  
+
+    def shares_outstanding(ticker):     #акций в обращении
+        with Client(TOKEN) as client:
+            instruments: InstrumentsService = client.instruments
+
+            shares = instruments.shares().instruments
+
+            for share in shares:
+                if share.ticker == ticker:
+                    if hasattr(share, 'issue_size'):
+                        return share.issue_size 
+
+    def info():
+        ticker = input("Введите тикер: ").strip().upper()
+
+        with Client(TOKEN) as client:
+            instruments_service = client.instruments
+            tickers = []
+
+            for method in ["shares", "bonds"]:
+                    for item in getattr(instruments_service, method)().instruments:
+                        tickers.append(
+                            {
+                                "name": item.name,
+                                "ticker": item.ticker,
+                                "figi": item.figi,
+                                "type": method,
+                                "lot": item.lot,
+                                "currency": item.currency,
+                                "exchange": item.exchange,
+                                "buy_available_flag": item.buy_available_flag,
+                                "sell_available_flag": item.sell_available_flag,
+                            }
+                        )
+
+            ticker_df = [t for t in tickers if t["ticker"] == ticker]
+
+            if not ticker_df:
+                print(f"\nТикер '{ticker}' не найден.\n")
+                return  # Завершаем выполнение функции, если тикер не найден
+
+            figi = ticker_df[0]["figi"]
+
+            # Проверка доступности для покупки
+            if not ticker_df[0]["buy_available_flag"]:
+                print(f"\nЦенная бумага с тикером {ticker} в данный момент недоступна на Московской бирже.")   #AAPL например
+                return  # Завершаем выполнение функции, если бумага недоступна для покупки
+
+            #print(f"\nТикер {ticker} имеет figi={figi}\n")
+            print(f"\nИнформация по тикеру {ticker}:\n")
+
+            #Выводим информацию построчно
+            for key, value in ticker_df[0].items():
+                print(f"{key}: {value}")
+
+            instrument_type = ticker_df[0]["type"]
+            
+            if instrument_type == "bonds":
+                bonds_outstanding_2 = bonds_outstanding(ticker)
+                if bonds_outstanding_2:
+                    print(f"\nКоличество облигаций в обращении у компании с тикером {ticker}: {bonds_outstanding_2}")
+
+                price = get_bond_price_by_figi(TOKEN, figi)
+                price = float(str(price).rstrip('0'))
+                capitalization = str(price * bonds_outstanding_2).rstrip('0').rstrip('.') 
+                print(f"\nКапитализация {ticker}: {capitalization} ₽")
+
+                if price:
+                    nominal, currency = get_bond_nominal_by_ticker(ticker)
+                    if currency == 'rub':
+                        print(f"\nТекущая цена {ticker}: {price/100 * nominal} {currency}")  #Облигации торгуются в % от номинала(price:100*номинал)
+                    if currency == 'usd':
+                        usd_figi = "BBG0013HGFT4"  # FIGI для USD/RUB
+                        usd_rate = get_currency_rate(usd_figi)
+
+                        print(f"\nТекущая цена {ticker}: {price/100 * nominal * usd_rate} ₽")
+                    if currency == 'cny':
+                        cny_figi = "BBG0013HRTL0"  # FIGI для CNY(юани - китайская валюта)/RUB
+                        cny_rate = get_currency_rate(cny_figi)
+
+                        print(f"\nТекущая цена {ticker}: {price/100 * nominal * cny_rate} ₽")
+
+            if instrument_type == "shares":
+                shares_outstanding_2 = shares_outstanding(ticker)
+                if shares_outstanding_2:
+                    print(f"\nКоличество акций в обращении у компании с тикером {ticker}: {shares_outstanding_2}")
+
+                price = get_share_price_by_figi(TOKEN, figi)
+                capitalization = str(price * shares_outstanding_2).rstrip('0').rstrip('.') 
+                print(f"\nКапитализация {ticker}: {capitalization} ₽")
+
+                if price:
+                    instruments: InstrumentsService = client.instruments
+
+                    shares = instruments.shares().instruments
+
+                    for share in shares:
+                        if share.ticker == ticker:
+                            nominal = share.nominal
+                    currency = share.nominal.currency
+
+                    if currency == 'rub':
+                        print(f"\nТекущая цена {ticker}: {price} ₽")
+                    if currency == 'usd':
+                        usd_figi = "BBG0013HGFT4"  # FIGI для USD/RUB
+                        usd_rate = get_currency_rate(usd_figi)
+
+                        print(f"\nТекущая цена {ticker}: {price * usd_rate} ₽")
+                    if currency == 'hkd':
+                        hkd_figi = "BBG0013HSW87"  # FIGI для HKD/RUB
+                        hkd_rate = get_currency_rate(hkd_figi)
+
+                        print(f"\nТекущая цена {ticker}: {price * hkd_rate} ₽")
+                    if currency == 'eur':
+                        eur_figi = "BBG0013HJJ31"  # FIGI для EUR/RUB
+                        eur_rate = get_currency_rate(eur_figi)
+
+                        print(f"\nТекущая цена {ticker}: {price * eur_rate} ₽")
+                    if currency == 'cny':
+                        cny_figi = "BBG0013HRTL0"  # FIGI для CNY(юани - китайская валюта)/RUB
+                        cny_rate = get_currency_rate(cny_figi)
+
+                        print(f"\nТекущая цена {ticker}: {price * cny_rate} ₽")
+
+    if __name__ == '__main__':
+        info()
+
+
+def list_all_shares():
+    list_moex_extended = []
+    list_MOEX_PLUS = []
+    list_MOEX = []
+    list_MOEX_WEEKEND = []
+    list_MOEX_EVENING_WEEKEND = []
+    list_moex_mrng_evng_e_wknd_dlr = []
+
+    with Client(TOKEN) as client:
+        r = client.instruments.shares(instrument_status=InstrumentStatus.INSTRUMENT_STATUS_ALL)
+        
+        for share in r.instruments:
+            if share.exchange == "moex_extended":
+                list_moex_extended.append((share.ticker, share.name))
+            if share.exchange == "MOEX_PLUS":
+                list_MOEX_PLUS.append((share.ticker, share.name))
+            if share.exchange == "MOEX":
+                list_MOEX.append((share.ticker, share.name))
+            if share.exchange == "MOEX_WEEKEND":
+                list_MOEX_WEEKEND.append((share.ticker, share.name))
+            if share.exchange == "MOEX_EVENING_WEEKEND":
+                list_MOEX_EVENING_WEEKEND.append((share.ticker, share.name))
+            if share.exchange == "moex_mrng_evng_e_wknd_dlr":
+                list_moex_mrng_evng_e_wknd_dlr.append((share.ticker, share.name))
+
     all_shares = set(list_moex_extended + list_MOEX_PLUS + list_MOEX + list_MOEX_WEEKEND + list_MOEX_EVENING_WEEKEND + list_moex_mrng_evng_e_wknd_dlr)
 
     print("\nСписок всех доступных акций на рынке:")
     for ticker, name in all_shares:
         print(f"{ticker}: {name}")
 
+def list_all_bonds():
+    list_moex_extended = []
+    list_MOEX_PLUS = []
+    list_MOEX = []
+    list_MOEX_WEEKEND = []
+    list_MOEX_EVENING_WEEKEND = []
+    list_moex_mrng_evng_e_wknd_dlr = []
+
+    with Client(TOKEN) as client:
+        r = client.instruments.bonds(instrument_status=InstrumentStatus.INSTRUMENT_STATUS_ALL)
+        
+        for bond in r.instruments:
+            if bond.exchange == "moex_extended":
+                list_moex_extended.append((bond.ticker, bond.name))
+            if bond.exchange == "MOEX_PLUS":
+                list_MOEX_PLUS.append((bond.ticker, bond.name))
+            if bond.exchange == "MOEX":
+                list_MOEX.append((bond.ticker, bond.name))
+            if bond.exchange == "MOEX_WEEKEND":
+                list_MOEX_WEEKEND.append((bond.ticker, bond.name))
+            if bond.exchange == "MOEX_EVENING_WEEKEND":
+                list_MOEX_EVENING_WEEKEND.append((bond.ticker, bond.name))
+            if bond.exchange == "moex_mrng_evng_e_wknd_dlr":
+                list_moex_mrng_evng_e_wknd_dlr.append((bond.ticker, bond.name))
+
+    all_bonds = set(list_moex_extended + list_MOEX_PLUS + list_MOEX + list_MOEX_WEEKEND + list_MOEX_EVENING_WEEKEND + list_moex_mrng_evng_e_wknd_dlr)
+
+    print("\nСписок всех доступных облигаций на рынке:")
+    for ticker, name in all_bonds:
+        print(f"{ticker}: {name}")
+
 #########################
 
 print('Для начала работы выберите что вы хотите сделать:')
 print('СПИСОК_АКЦИЙ - выведет все доступные акции на Московской бирже')
-print('ОСНОВНАЯ_ИНФОРМАЦИЯ_АКЦИИ - выведет основную информацию об акции по тикеру')
-print('ПОКУПКА - покупка ценной бумаги по тикеру')
-print('ПРОДАЖА - продажа ценной бумаги по тикеру')
+print('СПИСОК_ОБЛИГАЦИЙ - выведет все доступные облигации на Московской бирже')
+print('ОСНОВНАЯ_ИНФОРМАЦИЯ_ЦЕННОЙ_БУМАГИ - выведет основную информацию о ценной бумаге по тикеру')
+print('ПОКУПКА_АКЦИЙ - покупка акций по тикеру') 
+print('ПРОДАЖА_АКЦИЙ - продажа акций по тикеру')
+print('ПОКУПКА_ОБЛИГАЦИЙ - покупка облигаций по тикеру')
+print('ПРОДАЖА_ОБЛИГАЦИЙ - продажа облигаций по тикеру')
 
 request = input("Введите запрос: ").strip().upper()
 
 if request == 'СПИСОК_АКЦИЙ':
-    if __name__ == "__main__":
-        inf_all_shares()
+    list_all_shares()
 
-if request == 'ОСНОВНАЯ_ИНФОРМАЦИЯ_АКЦИИ':
-    if __name__ == "__main__":
-        main__share_inf()
+if request == 'СПИСОК_ОБЛИГАЦИЙ':
+    list_all_bonds()
+
+if request == 'ОСНОВНАЯ_ИНФОРМАЦИЯ_ЦЕННОЙ_БУМАГИ':
+    main_info()
         
-if request == 'ПОКУПКА':
-    if __name__ == "__main__":
-        buy_share()
+if request == 'ПОКУПКА_АКЦИЙ':
+    buy_share()
 
-if request == 'ПРОДАЖА':
-    if __name__ == "__main__":
-        sell_share()
+if request == 'ПРОДАЖА_АКЦИЙ':
+    sell_share()
+
+if request == 'ПОКУПКА_ОБЛИГАЦИЙ':
+    buy_bond()
+
+if request == 'ПРОДАЖА_ОБЛИГАЦИЙ':
+    sell_bond()
