@@ -16,7 +16,7 @@ with Client(TOKEN) as client:
     print(r)
 '''
 
-ACCOUNT_ID = "2159881804"  # Вставьте сюда ваш аккаунт id
+ACCOUNT_ID = ""  # Вставьте сюда ваш аккаунт id
 
 def get_share_figi_by_ticker(ticker):
     with Client(TOKEN) as client:
