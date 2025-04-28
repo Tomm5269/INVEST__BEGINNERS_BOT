@@ -8,7 +8,15 @@ from tinkoff.invest.constants import INVEST_GRPC_API
 
 TOKEN = ""  # Вставьте сюда ваш Тинькофф токен с полным доступом
 
-ACCOUNT_ID = ""  # Вставьте сюда ваш аккаунт id
+#раскомментируйте чтобы узнать ваш аккаунт id, а затем обратно закомментируйте
+'''
+#узнать id аккаунта
+with Client(TOKEN) as client:
+    r = client.users.get_accounts()
+    print(r)
+'''
+
+ACCOUNT_ID = "2159881804"  # Вставьте сюда ваш аккаунт id
 
 def get_share_figi_by_ticker(ticker):
     with Client(TOKEN) as client:
