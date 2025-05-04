@@ -1,0 +1,73 @@
+from decimal import Decimal
+from tinkoff.invest import Client, OperationType
+from datetime import datetime
+
+TOKEN = ""
+
+listt_accounts = {}
+
+#получение ID аккаунта
+with Client(TOKEN) as client:
+    r = client.users.get_accounts()
+    for a in r.accounts:
+       listt_accounts.setdefault(a.name, a.id)
+
+print(f'Выберите счёт(название):{listt_accounts}')
+name_acc = input()
+
+ACCOUNT_ID = listt_accounts[name_acc]
+
+#получение "BEGIN_DATE" - начало срока ивнестирования
+with Client(TOKEN) as client:
+    r = client.users.get_accounts()
+    for a in r.accounts:
+        if a.name == name_acc:
+            BEGIN_DATE = str(a.opened_date)[:10]
+            break
+
+year, month, day = BEGIN_DATE.split('-')
+
+year = int(year)
+month = int(month)
+day = int(day)
+
+with Client(TOKEN) as client:
+    resp = client.operations.get_operations(
+        account_id=ACCOUNT_ID,
+        from_=datetime(year, month, day),
+        to=datetime.now()
+    )
+    
+    payed_in = []
+    for operation in resp.operations:
+        if operation.operation_type == OperationType.OPERATION_TYPE_INPUT:
+            units = Decimal(str(operation.payment.units))
+            nano = Decimal(str(operation.payment.nano))
+            total = units + nano / Decimal('1000000000')
+            payed_in.append(total)
+
+    total_money_input = sum(payed_in)
+    print(f'Пополнения портфеля: {total_money_input} rub')  #rub - статическое значение, надо узнать как это будет переводиться если пополнение одно например будет в долларах
+
+with Client(TOKEN) as client:
+    r = client.operations.get_portfolio(account_id=ACCOUNT_ID) #заменить на id_acc
+    current_balance = str(r.total_amount_portfolio.units) + '.' + str(str(r.total_amount_portfolio.nano).strip('0')) 
+    shares_balance = str(r.total_amount_shares.units) + '.' + str(str(r.total_amount_shares.nano).strip('0')) 
+    bonds_balance = str(r.total_amount_bonds.units) + '.' + str(str(r.total_amount_bonds.nano).strip('0')) 
+    currencies_balance = str(r.total_amount_currencies.units) + '.' + str(str(r.total_amount_currencies.nano).strip('0')) 
+    etf_balance = str(r.total_amount_etf.units) + '.' + str(str(r.total_amount_etf.nano).strip('0')) 
+    future_balance = str(r.total_amount_futures.units) + '.' + str(str(r.total_amount_futures.nano).strip('0')) 
+    options_balance = str(r.total_amount_options.units) + '.' + str(str(r.total_amount_options.nano).strip('0')) 
+    nots_balance = str(r.total_amount_sp.units) + '.' + str(str(r.total_amount_sp.nano).strip('0')) 
+    expected_yield = r.expected_yield
+print(f'Баланс портфеля на текущий момент: {current_balance} {r.total_amount_portfolio.currency}')
+print(f'Прибыль: {float(current_balance) - float(total_money_input)} (разница между тем, что вложили и имеете сейчас в портфеле)')
+print(f'Всего куплено акций на сумму {shares_balance} {r.total_amount_shares.currency} (соответствует сумме котировок всех акций в вашем портфеле на ДАННЫЙ МОМЕНТ ВРЕМЕНИ - это не сумма всех цен, по которым вы покупали акции)')
+print(f'Всего куплено облигаций на сумму {bonds_balance} {r.total_amount_bonds.currency} (соответствует сумме котировок всех облигаций в вашем портфеле на ДАННЫЙ МОМЕНТ ВРЕМЕНИ - это не сумма всех цен, по которым вы покупали облигации)')
+print(f'Валюта: {r.total_amount_currencies.currency}')
+print(f'ETF: {etf_balance} {r.total_amount_etf.currency}')
+print(f'Фьючерсы: {future_balance} {r.total_amount_futures.currency}')
+print(f'Опционы: {options_balance} {r.total_amount_options.currency}')
+print(f'Общая стоимость структурных нот в портфеле: {nots_balance} {r.total_amount_sp.currency}')
+print(f'Оставшиеся неинвестированные деньги: {currencies_balance}')
+#print(expected_yield)  сделать относительную дходность портфеля в процентах
