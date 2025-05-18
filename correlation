@@ -1,0 +1,35 @@
+import pandas as pd
+import webbrowser
+import os
+from openpyxl import load_workbook
+
+data = {
+    'Столбец_1': [1, 2, 3],
+    'Столбец_2': [1, 2, 5]
+}
+df = pd.DataFrame(data)
+
+# Вычисляем корреляцию
+correlation = df['Столбец_1'].corr(df['Столбец_2'])
+
+# Сохраняем в Excel
+excel_file = 'результат_корреляции.xlsx'
+df.to_excel(excel_file, index=False)
+
+# Добавляем корреляцию в файл
+wb = load_workbook(excel_file)
+ws = wb.active
+ws.cell(row=len(df)+3, column=1, value='Результат корреляции:')
+ws.cell(row=len(df)+3, column=2, value=correlation)
+wb.save(excel_file)
+
+# Автоматически открываем файл
+# Получаем абсолютный путь к файлу
+file_path = os.path.abspath(excel_file)
+# Открываем файл в ассоциированной программе
+webbrowser.open(f'file://{file_path}')
+print(f"Файл открывается: {file_path}")
+
+
+
+print(f"\nКорреляция: {correlation:.4f}")
