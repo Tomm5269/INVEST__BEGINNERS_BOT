@@ -1,0 +1,59 @@
+import asyncio
+import pandas as pd
+import mplfinance as mpf
+from datetime import timedelta
+from tinkoff.invest import CandleInterval
+from tinkoff.invest.retrying.aio.client import AsyncRetryingClient
+from tinkoff.invest.retrying.settings import RetryClientSettings
+from tinkoff.invest.utils import quotation_to_decimal, now
+
+TOKEN = ''  # Вставьте ваш токен
+
+retry_settings = RetryClientSettings(use_retry=True, max_retry_attempt=2)
+
+async def fetch_year_candles(figi: str = "BBG004730N88"):            #можно заменить
+    """
+    Получение дневных свечей за последний год/месяц/час и тд(в зависимости от того что вы выберите и как это измените в коде) для указанного figi
+    """
+    candles_data = []
+    async with AsyncRetryingClient(TOKEN, settings=retry_settings) as client:
+        async for candle in client.get_all_candles(
+            figi=figi,
+            from_=now() - timedelta(days=365),                             #можно заменить
+            interval=CandleInterval.CANDLE_INTERVAL_4_HOUR                   #можно заменить
+        ):
+            candles_data.append({
+                'Date': candle.time.replace(tzinfo=None),
+                'Open': float(quotation_to_decimal(candle.open)),
+                'High': float(quotation_to_decimal(candle.high)),
+                'Low': float(quotation_to_decimal(candle.low)),
+                'Close': float(quotation_to_decimal(candle.close)),
+                'Volume': candle.volume
+            })
+    return pd.DataFrame(candles_data).set_index('Date')
+
+def plot_year_chart(df: pd.DataFrame):
+    """
+    Визуализация годового графика
+    """
+    mpf.plot(df, 
+             type='candle', 
+             volume=True, 
+             style='yahoo', 
+             title='Годовой график Сбербанк',            #можно заменить
+             mav=(20, 50),
+             figratio=(18, 10),
+             figscale=1.2,
+             tight_layout=True)
+
+async def main():
+    print("Загрузка данных за год по Сбербанку...")       #можно заменить
+    df = await fetch_year_candles()
+    if not df.empty:
+        print(df.head())
+        plot_year_chart(df)
+    else:
+        print("Не удалось получить данные")
+
+if __name__ == "__main__":
+    asyncio.run(main())
