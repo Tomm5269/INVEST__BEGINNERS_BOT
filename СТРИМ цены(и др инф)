@@ -1,0 +1,50 @@
+import asyncio
+
+from tinkoff.invest import (
+    AsyncClient,
+    CandleInstrument,
+    MarketDataRequest,
+    SubscribeCandlesRequest,
+    SubscriptionAction,
+    SubscriptionInterval,
+)
+
+TOKEN = 'ВВЕДИТЕ_ВАШ_ТОКЕН'
+
+
+async def main():
+    async def request_iterator():
+        yield MarketDataRequest(
+            subscribe_candles_request=SubscribeCandlesRequest(
+                subscription_action=SubscriptionAction.SUBSCRIPTION_ACTION_SUBSCRIBE,
+                instruments=[
+                    CandleInstrument(
+                        figi="BBG004730N88",                                               #можно заменить
+                        interval=SubscriptionInterval.SUBSCRIPTION_INTERVAL_ONE_MINUTE,    #можно заменить
+                    )
+                ],
+            )
+        )
+        while True:
+            await asyncio.sleep(1)
+
+    async with AsyncClient(TOKEN) as client:
+        async for marketdata in client.market_data_stream.market_data_stream(
+            request_iterator()
+        ):
+            if marketdata.candle:
+                open_candle = str(marketdata.candle.open.units)+'.'+str(marketdata.candle.open.nano).rstrip('0')
+                high_candle = str(marketdata.candle.high.units)+'.'+str(marketdata.candle.high.nano).rstrip('0')
+                low_candle = str(marketdata.candle.low.units)+'.'+str(marketdata.candle.low.nano).rstrip('0')
+                close_candle = str(marketdata.candle.close.units)+'.'+str(marketdata.candle.close.nano).rstrip('0')
+                volume_candle = str(marketdata.candle.volume)
+                print(f"Open: {open_candle}")
+                print(f"High: {high_candle}")
+                print(f"Low: {low_candle}")
+                print(f"Close: {close_candle}")
+                print(f"Volume: {volume_candle}")
+                print("-" * 30)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
