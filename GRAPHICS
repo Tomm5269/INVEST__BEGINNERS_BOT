@@ -34,7 +34,7 @@ async def fetch_year_candles(figi: str = "BBG004730N88"):            #можно
 
 def plot_year_chart(df: pd.DataFrame):
     """
-    Визуализация годового графика
+    Визуализация годового графика                        #можно заменить
     """
     mpf.plot(df, 
              type='candle', 
