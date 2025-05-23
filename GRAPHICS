@@ -19,8 +19,8 @@ async def fetch_year_candles(figi: str = "BBG004730N88"):            #можно
     async with AsyncRetryingClient(TOKEN, settings=retry_settings) as client:
         async for candle in client.get_all_candles(
             figi=figi,
-            from_=now() - timedelta(days=365),                             #можно заменить
-            interval=CandleInterval.CANDLE_INTERVAL_4_HOUR                   #можно заменить
+            from_=now() - timedelta(days=5),                             #можно заменить
+            interval=CandleInterval.CANDLE_INTERVAL_1_MIN                   #можно заменить
         ):
             candles_data.append({
                 'Date': candle.time.replace(tzinfo=None),
@@ -32,9 +32,9 @@ async def fetch_year_candles(figi: str = "BBG004730N88"):            #можно
             })
     return pd.DataFrame(candles_data).set_index('Date')
 
-def plot_year_chart(df: pd.DataFrame):
+def plot_year_chart(df: pd.DataFrame):                                  #можно заменить
     """
-    Визуализация годового графика                        #можно заменить
+    Визуализация годового графика                             #можно заменить
     """
     mpf.plot(df, 
              type='candle', 
@@ -47,11 +47,11 @@ def plot_year_chart(df: pd.DataFrame):
              tight_layout=True)
 
 async def main():
-    print("Загрузка данных за год по Сбербанку...")       #можно заменить
-    df = await fetch_year_candles()
+    print("Загрузка данных за год по Сбербанку...")            #можно заменить
+    df = await fetch_year_candles()                            #можно заменить
     if not df.empty:
         print(df.head())
-        plot_year_chart(df)
+        plot_year_chart(df)                                     #можно заменить
     else:
         print("Не удалось получить данные")
 
