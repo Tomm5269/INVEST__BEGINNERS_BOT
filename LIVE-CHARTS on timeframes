@@ -1,0 +1,77 @@
+import asyncio
+from datetime import timedelta
+import pandas as pd
+from lightweight_charts import Chart
+from tinkoff.invest import CandleInterval
+from tinkoff.invest.retrying.aio.client import AsyncRetryingClient
+from tinkoff.invest.retrying.settings import RetryClientSettings
+from tinkoff.invest.utils import now, quotation_to_decimal
+
+TOKEN = 'ВВЕДИТЕ_СЮДА_ВАШ_ТОКЕН'
+FIGI = 'BBG004730N88'  #СБЕР  
+
+retry_settings = RetryClientSettings(use_retry=True, max_retry_attempt=2)
+
+async def get_data(timeframe):
+    interval_mapping = {
+        '1 мин': CandleInterval.CANDLE_INTERVAL_1_MIN,
+        '15 мин': CandleInterval.CANDLE_INTERVAL_15_MIN,
+        '1 час': CandleInterval.CANDLE_INTERVAL_HOUR
+    }
+    
+    try:
+        async with AsyncRetryingClient(TOKEN, settings=retry_settings) as client:
+            candles = []
+            async for candle in client.get_all_candles(
+                figi=FIGI,
+                from_=now() - timedelta(days=1),
+                interval=interval_mapping[timeframe]
+            ):
+                candles.append({
+                    'time': candle.time.replace(tzinfo=None).isoformat(),
+                    'open': float(quotation_to_decimal(candle.open)),
+                    'high': float(quotation_to_decimal(candle.high)),
+                    'low': float(quotation_to_decimal(candle.low)),
+                    'close': float(quotation_to_decimal(candle.close)),
+                    'volume': candle.volume
+                })
+            return pd.DataFrame(candles).sort_values('time')
+    except Exception as e:
+        print(f"Ошибка при получении данных: {e}")
+        return pd.DataFrame()
+
+async def main():
+    chart = Chart()
+    
+    # Загрузка начальных данных
+    initial_timeframe = '15 мин'
+    df = await get_data(initial_timeframe)
+    if df.empty:
+        print("Не удалось загрузить начальные данные")
+        return
+    chart.set(df)
+    
+    # Создаем switcher с правильной обработкой аргументов
+    def on_timeframe_change(chart_widget):
+        async def update():
+            new_timeframe = chart.topbar['timeframe'].value
+            new_df = await get_data(new_timeframe)
+            if not new_df.empty:
+                chart.set(new_df)
+        
+        asyncio.create_task(update())
+    
+    chart.topbar.switcher(
+        name='timeframe',
+        options=('1 мин', '15 мин', '1 час'),
+        default=initial_timeframe,
+        func=on_timeframe_change
+    )
+    
+    await chart.show_async()
+
+if __name__ == '__main__':
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        print(f"Произошла ошибка: {e}")
